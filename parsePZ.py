@@ -7,8 +7,16 @@ import sys
 import re
 from obspy.core.inventory.response import PolesZerosResponseStage, Response,\
     InstrumentSensitivity
-from obspy.core.util.obspy_types import CustomComplex
+from obspy.core.util.obspy_types import CustomComplex, ComplexWithUncertainties
+
 from lxml.etree import Element
+from obspy.core.inventory.util import Frequency
+import glob
+
+
+#Response Stage
+#https://docs.obspy.org/master/packages/autogen/obspy.core.inventory.response.ResponseStage.__init__.html
+
 
 PZnamedict={
         '* NETWORK   (KNETWK)':'net',
@@ -89,7 +97,9 @@ def parsePZstrpaz(fstr):
             for j in range(npoles):                
                 try:
                     line=lines[i+j+1].split()
-                    poles.append(float(line[0])+float(line[1])*(1j))
+                    pole=float(line[0])+float(line[1])*(1j)
+                    pole=ComplexWithUncertainties(CustomComplex(pole),lower_uncertainty=0.0,upper_uncertainty=0.0)
+                    poles.append(pole)
                 except:
                     raise(BaseException('failed to read poles in line: '+line))
         
@@ -98,7 +108,9 @@ def parsePZstrpaz(fstr):
             for j in range(nzeros):
                 try:
                     line=lines[i+j+1].split()
-                    zeros.append(float(line[0])+float(line[1])*(1j))
+                    zero=float(line[0])+float(line[1])*(1j)
+                    zero=ComplexWithUncertainties(CustomComplex(zero),lower_uncertainty=0.0,upper_uncertainty=0.0)
+                    zeros.append(zero)
                 except:
                     raise(BaseException('failed to read zeros in line: '+line))
         
@@ -169,15 +181,25 @@ def parsePZdict(fstr,chadict):
     
     net.stations.append(sta)
     sta.channels.append(cha)
-    cha.response=Response(response_stages=[pazstage])
+    cha.response=Response(response_stages=[pazstage],instrument_sensitivity=pazstage.instrument_sensitivity)
+    
     
     return net
 def get_resp_stage(fstr,chadict):
     
+    norm_freq_def=1.0 #Hz
+    stage_gain_frequency=1.0 #Hz
+    
     poles,zeros,constant=parsePZstrpaz(fstr)
     
-    poles=map(CustomComplex,poles)
-    zeros=map(CustomComplex,zeros)
+    #for pole in poles:
+    #    pole=ComplexWithUncertainties(CustomComplex(pole),lower_uncertainty=0.0,upper_uncertainty=0.0)
+        
+    #for zero in zeros:
+    #    zero=ComplexWithUncertainties(CustomComplex(zero),lower_uncertainty=0.0,upper_uncertainty=0.0)
+    
+    #poles=map(ComplexWithUncertainties,poles)
+    #zeros=map(ComplexWithUncertainties,zeros)
     
     a0=float(chadict['A0'])
     
@@ -189,7 +211,7 @@ def get_resp_stage(fstr,chadict):
     stage_gain=constant
     
     #info not in PZ file:
-    stage_gain_frequency=1.0 #Hz 
+     
     
     #might be messed up, M/S default
     input_units=chadict['in_unit'] #M/S
@@ -203,11 +225,13 @@ def get_resp_stage(fstr,chadict):
     pz_transfer_function_type='LAPLACE (RADIANS/SECOND)'
     
     #assuming
-    normalization_frequency=1.0 #Hz
+    normalization_frequency=Frequency(norm_freq_def,lower_uncertainty=0, upper_uncertainty=0) #Hz
     
     normalization_factor=float(chadict['A0'])
     
     source=0
+    
+    #print poles,type(poles[0])
     
     pazstage=PolesZerosResponseStage(stage_sequence_number, stage_gain,
     stage_gain_frequency, input_units, output_units, pz_transfer_function_type,
@@ -224,14 +248,14 @@ def get_resp_stage(fstr,chadict):
     input_units=input_units
     
     instrument_sensitivity=InstrumentSensitivity(value, 
-                          frequency, 
-                          input_units, 
-                          output_units, 
-                          input_units_description=None, 
-                          output_units_description=None, 
-                          frequency_range_start=None, 
-                          frequency_range_end=None, 
-                          frequency_range_db_variation=None)
+                                                  frequency, 
+                                                  input_units, 
+                                                  output_units, 
+                                                  input_units_description=None, 
+                                                  output_units_description=None, 
+                                                  frequency_range_start=None, 
+                                                  frequency_range_end=None, 
+                                                  frequency_range_db_variation=None)
     
     pazstage.instrument_sensitivity=instrument_sensitivity
     pazstage.instrument_polynomial=None
@@ -239,21 +263,32 @@ def get_resp_stage(fstr,chadict):
 
 def add_to_inv(inv,net):
     #merges net into inv, assuming network and station codes are unique
-    if net in inv:
+    
+    
+    if net.code in set((net2.code) for net2 in inv.networks):
+        net_inv=[net2 for net2 in inv if net2.code == net.code][0]
         for sta in net:
-            if sta in net:
+            if sta.code in set((sta2.code) for sta2 in net_inv):
+                sta_inv=[sta2 for sta2 in net_inv if sta2.code == sta.code][0]
                 for cha in sta:
-                    if cha in sta:
-                        pass
+                    if cha.code in set((cha2.code) for cha2 in sta_inv):
                         print 'channel already in inventory'
                     else:
-                        sta.channels.append(sta)
+                        sta_inv.channels.append(cha)
             else:
-                net.stations.append(sta)
-    inv.networks.append(net)
+                net_inv.stations.append(sta)
+    else:
+        inv.networks.append(net)
     
-    return inv
+    #return inv
          
+         
+def create_empty_inv(source='None'):
+    inv=Inventory(
+                  networks=[],
+                  source=source)
+    return inv
+
 def create_sample_inv():
     # We'll first create all the various objects. These strongly follow the
 # hierarchy of StationXML files.
@@ -303,6 +338,15 @@ def create_sample_inv():
     return inv,net,sta
 
 def writeStationXml(inv):
+    
+    
+    #defaults missing in PZ
+    sample_rate_def=100. #Hz
+    depth_def=0. #m
+    clock_drift_def=0. #s
+    sensor_type_def=30. #s
+    
+    
     stxml=Element('FDSNStationXML')
     stxml.set('xmlns','http://www.fdsn.org/xml/station/1')
     stxml.set('schemaVersion','1')
@@ -336,28 +380,110 @@ def writeStationXml(inv):
         for sta in net:
             stax=Element('Station')
             stax.set('code',sta.code)
-            stax.set('startDate',)
+            stax.set('startDate',str(sta.creation_date))
             
             lat=Element('Latitude')
-            lat.text
+            lat.text=str(chadict['lat'])
+            stax.append(lat)
+            
+            
+            lon=Element('Longitude')
+            lon.text=str(chadict['lon'])
+            stax.append(lon)
+            
+            elv=Element('Elevation')
+            elv.text=str(chadict['elv'])
+            stax.append(elv)
+            
+            
+            creation_date=Element('Created')
+            creation_date.text=str(sta.creation_date)
+            stax.append(creation_date)
             
             for cha in sta:
                 chax=Element('Channel')
+                lat=Element('Latitude')
+                lat.text=str(chadict['lat'])
+                chax.append(lat)
                 
-                for resp in cha.response_stages:
+                
+                lon=Element('Longitude')
+                lon.text=str(chadict['lon'])
+                chax.append(lon)
+                
+                elv=Element('Elevation')
+                elv.text=str(chadict['elv'])
+                chax.append(elv)
+                
+                dep=Element('Depth')
+                dep.text=str(depth)
+                chax.append(dep_def)
+                
+                az=Element('Azimuth')
+                az.text=str(cha.depth)
+                chax.append(az)
+                
+                dip=Element('Dip')
+                dip.text=str(cha.depth)
+                chax.append(dip)
+                
+                type=Element('Type')
+                type.text='GEOPHYSICS'
+                chax.append(type)
+                
+                type=Element('Type')
+                type.text='CONTINUOUS'
+                chax.append(type)
+                
+                sample_rate=Element('SampleRate')
+                sample_rate.text=sample_rate_def
+                chax.append(sample_rate)
+                
+                clock_drift=Element('ClockDrift')
+                clock_drift.text=clock_drift_def
+                chax.append(clock_drift)
+                
+                sensor=Element('Sensor')
+                sensor_desc=Element('Description')
+                sensor_desc.text=sensor_type_def
+                sensor.append(sensor_desc)
+                chax.append(sensor)
+                
+                for resp in cha.response.response_stages:
                     respx=Element('Response')
+                    
+                    resp_elems={
+                                'InstrumentSensitivity':'hebe'
+                                }
+                    
+                    
+                    
+                    
+                    
+                    
+            netx.append(stax)
+        stxml.append(netx)
+    
+    return stxml
     
 
 if __name__=='__main__':
 
-    infile='ALTN_BHE_KOU_19900101_OnSite_W.PZ'
+    #infile='ALTN_BHE_KOU_19900101_OnSite_W.PZ'
+    
+    inv = create_empty_inv('Yaman Ozakin - dandik@gmail.com')
+    
+    for f in glob.glob('*PZ'):
+        net,chadict=parsePZfile(f)
+        add_to_inv(inv, net)
+        
     
     
-    inv = Inventory(
+    
         # We'll add networks later.
-        networks=[],
+        #networks=[],
         # The source should be the id whoever create the file.
-        source="Yaman Ozakin - dandik@gmail.com")
+        #source="Yaman Ozakin - dandik@gmail.com")
     
     
 
@@ -365,8 +491,8 @@ if __name__=='__main__':
             #if station not in network, create station
                 #if channel not in station, create station
     
-    net,chadict=parsePZfile(infile)
-    inv.networks.append(net)
+    #net,chadict=parsePZfile(infile)
+    #inv.networks.append(net)
     
     #ssys.exit()
     
