@@ -1,6 +1,7 @@
 # Parse Earthworm PZ files into obspy Inventory object
-ver 0.1:
+ver 0.2:
 * Reads all '*PZ' files in the directory into an obspy inventory object
+* Produces stationXML compatible with dataless SEED
 
 ## Assumptions
 * Network codes and stations codes are unique
