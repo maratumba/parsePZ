@@ -10,8 +10,9 @@ from obspy.core.inventory.response import PolesZerosResponseStage, Response,\
 from obspy.core.util.obspy_types import CustomComplex, ComplexWithUncertainties
 
 from lxml.etree import Element
-from obspy.core.inventory.util import Frequency
+from obspy.core.inventory.util import Frequency, Equipment
 import glob
+from obspy.core.utcdatetime import UTCDateTime
 
 
 #Response Stage
@@ -148,10 +149,12 @@ def parsePZdict(fstr,chadict):
     code=chadict['net'],
     # A list of stations. We'll add one later.
     stations=[],
-    description="Kocaeli Universitesi MARSite istasyonlari",
+    description="Kocaeli Marsite",
     # Start-and end dates are optional.
-    #start_date=obspy.UTCDateTime(2016, 1, 2))
+    start_date=obspy.UTCDateTime(chadict['start_time']),
     )
+    
+    
     
     sta = Station(
     # This is the station code according to the SEED standard.
@@ -160,10 +163,18 @@ def parsePZdict(fstr,chadict):
     longitude=lon,
     elevation=elv,
     creation_date=obspy.UTCDateTime('T'.join(re.sub('\.',':',chadict['created']).split())),
+    start_date=obspy.UTCDateTime(chadict['start_time']),
     site=Site(name=chadict['sta'])
     )
     
+    # necessary minimum sensor info for channel:
+    #<Sensor>
+    #   <Model>30s,</Model>
+    #</Sensor>
+    equipment=Equipment(chadict['inst_type'])
+    
     cha = Channel(
+    sensor=equipment,
     # This is the channel code according to the SEED standard.
     code=chadict['cha'],
     # This is the location code according to the SEED standard.
@@ -174,6 +185,7 @@ def parsePZdict(fstr,chadict):
     elevation=elv,
     depth=dep,
     azimuth=az,
+    start_date=obspy.UTCDateTime(chadict['start_time']),
     dip=dip
     )
     
@@ -189,6 +201,7 @@ def get_resp_stage(fstr,chadict):
     
     norm_freq_def=1.0 #Hz
     stage_gain_frequency=1.0 #Hz
+    frequency_def=1.0 #Hz
     
     poles,zeros,constant=parsePZstrpaz(fstr)
     
@@ -244,7 +257,7 @@ def get_resp_stage(fstr,chadict):
     
     #instrument sensitivity:
     value=float(chadict['sensitivity'].split()[0])
-    frequency=1.0 #Hz
+    frequency=frequency_def #Hz
     input_units=input_units
     
     instrument_sensitivity=InstrumentSensitivity(value, 
@@ -338,7 +351,7 @@ def create_sample_inv():
     return inv,net,sta
 
 def writeStationXml(inv):
-    
+    #not working, not necessary now that it can read into inventory 
     
     #defaults missing in PZ
     sample_rate_def=100. #Hz
