@@ -140,32 +140,36 @@ def parsePZdict(fstr,chadict):
     try:
         dep=float(chadict['dep'])
     except:
-        dep=0.   
+        dep=0.
+    try:
+        sample_rate=float(chadict['sample_rate'])
+    except:
+        None
     
     az,dip=get_azdip(chadict)
     
     net = Network(
-    # This is the network code according to the SEED standard.
-    code=chadict['net'],
-    # A list of stations. We'll add one later.
-    stations=[],
-    description="Kocaeli Marsite",
-    # Start-and end dates are optional.
-    start_date=obspy.UTCDateTime(chadict['start_time']),
-    )
+                  # This is the network code according to the SEED standard.
+                  code=chadict['net'],
+                  # A list of stations. We'll add one later.
+                  stations=[],
+                  description="Kocaeli Marsite",
+                  # Start-and end dates are optional.
+                  start_date=obspy.UTCDateTime(chadict['start_time']),
+                  )
     
     
     
     sta = Station(
-    # This is the station code according to the SEED standard.
-    code=chadict['sta'],
-    latitude=lat,
-    longitude=lon,
-    elevation=elv,
-    creation_date=obspy.UTCDateTime('T'.join(re.sub('\.',':',chadict['created']).split())),
-    start_date=obspy.UTCDateTime(chadict['start_time']),
-    site=Site(name=chadict['sta'])
-    )
+                  # This is the station code according to the SEED standard.
+                  code=chadict['sta'],
+                  latitude=lat,
+                  longitude=lon,
+                  elevation=elv,
+                  creation_date=obspy.UTCDateTime('T'.join(re.sub('\.',':',chadict['created']).split())),
+                  start_date=obspy.UTCDateTime(chadict['start_time']),
+                  site=Site(name=chadict['sta'])
+                  )
     
     # necessary minimum sensor info for channel:
     #<Sensor>
@@ -173,30 +177,37 @@ def parsePZdict(fstr,chadict):
     #</Sensor>
     equipment=Equipment(chadict['inst_type'])
     
+    
+    #Channel ref: http://docs.obspy.org/archive/0.10.2/packages/autogen/obspy.station.channel.Channel.__init__.html
     cha = Channel(
-    sensor=equipment,
-    # This is the channel code according to the SEED standard.
-    code=chadict['cha'],
-    # This is the location code according to the SEED standard.
-    location_code=chadict['loc'],
-    # Note that these coordinates can differ from the station coordinates.
-    latitude=lat,
-    longitude=lon,
-    elevation=elv,
-    depth=dep,
-    azimuth=az,
-    start_date=obspy.UTCDateTime(chadict['start_time']),
-    dip=dip
-    )
+                  sensor=equipment,
+                  # This is the channel code according to the SEED standard.
+                  code=chadict['cha'],
+                  # This is the location code according to the SEED standard.
+                  location_code=chadict['loc'],
+                  # Note that these coordinates can differ from the station coordinates.
+                  latitude=lat,
+                  longitude=lon,
+                  elevation=elv,
+                  depth=dep,
+                  azimuth=az,
+                  start_date=obspy.UTCDateTime(chadict['start_time']),
+                  dip=dip,
+                  sample_rate=sample_rate
+                  )
     
     pazstage=get_resp_stage(fstr,chadict)
     
     net.stations.append(sta)
     sta.channels.append(cha)
-    cha.response=Response(response_stages=[pazstage],instrument_sensitivity=pazstage.instrument_sensitivity)
+    cha.response=Response(
+                          response_stages=[pazstage],
+                          instrument_sensitivity=pazstage.instrument_sensitivity
+                          )
     
     
     return net
+
 def get_resp_stage(fstr,chadict):
     
     norm_freq_def=1.0 #Hz
@@ -246,14 +257,26 @@ def get_resp_stage(fstr,chadict):
     
     #print poles,type(poles[0])
     
-    pazstage=PolesZerosResponseStage(stage_sequence_number, stage_gain,
-    stage_gain_frequency, input_units, output_units, pz_transfer_function_type,
-    normalization_frequency, zeros, poles, normalization_factor=normalization_factor,
-    resource_id=None, resource_id2=None, name=None, input_units_description=None,
-    output_units_description=None, description=None,
-    decimation_input_sample_rate=None, decimation_factor=None,
-    decimation_offset=None, decimation_delay=None,
-    decimation_correction=None)#, instrument_sensitivity=instrument_sensitivity)
+    pazstage=PolesZerosResponseStage(stage_sequence_number, 
+                                     stage_gain,
+                                     stage_gain_frequency, 
+                                     input_units, output_units, 
+                                     pz_transfer_function_type,
+                                     normalization_frequency, 
+                                     zeros, 
+                                     poles, 
+                                     normalization_factor=normalization_factor,
+                                     resource_id=None, 
+                                     resource_id2=None, 
+                                     name=None, 
+                                     input_units_description=None,
+                                     output_units_description=None, 
+                                     description=None,
+                                     decimation_input_sample_rate=None, 
+                                     decimation_factor=None,
+                                     decimation_offset=None, 
+                                     decimation_delay=None,
+                                     decimation_correction=None)#, instrument_sensitivity=instrument_sensitivity)
     
     #instrument sensitivity:
     value=float(chadict['sensitivity'].split()[0])
@@ -261,22 +284,23 @@ def get_resp_stage(fstr,chadict):
     input_units=input_units
     
     instrument_sensitivity=InstrumentSensitivity(value, 
-                                                  frequency, 
-                                                  input_units, 
-                                                  output_units, 
-                                                  input_units_description=None, 
-                                                  output_units_description=None, 
-                                                  frequency_range_start=None, 
-                                                  frequency_range_end=None, 
-                                                  frequency_range_db_variation=None)
+                                                 frequency, 
+                                                 input_units, 
+                                                 output_units, 
+                                                 input_units_description=None, 
+                                                 output_units_description=None, 
+                                                 frequency_range_start=None, 
+                                                 frequency_range_end=None, 
+                                                 frequency_range_db_variation=None)
     
     pazstage.instrument_sensitivity=instrument_sensitivity
     pazstage.instrument_polynomial=None
     return pazstage
 
-def add_to_inv(inv,net):
+def add_to_inv(inv2,net):
     #merges net into inv, assuming network and station codes are unique
     
+    inv=inv2.copy()
     
     if net.code in set((net2.code) for net2 in inv.networks):
         net_inv=[net2 for net2 in inv if net2.code == net.code][0]
@@ -293,8 +317,7 @@ def add_to_inv(inv,net):
     else:
         inv.networks.append(net)
     
-    #return inv
-         
+    return inv     
          
 def create_empty_inv(source='None'):
     inv=Inventory(
@@ -433,11 +456,11 @@ def writeStationXml(inv):
                 chax.append(dep_def)
                 
                 az=Element('Azimuth')
-                az.text=str(cha.depth)
+                az.text=str(cha.az)
                 chax.append(az)
                 
                 dip=Element('Dip')
-                dip.text=str(cha.depth)
+                dip.text=str(cha.dip)
                 chax.append(dip)
                 
                 type=Element('Type')
@@ -488,10 +511,11 @@ if __name__=='__main__':
     
     for f in glob.glob('*PZ'):
         net,chadict=parsePZfile(f)
-        add_to_inv(inv, net)
+        inv=add_to_inv(inv, net)
         
-    
-    
+    #change the network name to TL
+    inv[0].code='TL'
+    inv.write('kocaeli_radian.xml',format='stationxml',validate=True)
     
         # We'll add networks later.
         #networks=[],
